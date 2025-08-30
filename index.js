@@ -63,9 +63,9 @@ class AestheticLogger {
             debug: chalk.magenta
         };
         
-        const color = colorMap[level] || chalk.white;
+        const colorFunc = colorMap[level] || chalk.white;
         const prefix = this.rainbowGradient(`[${timestamp}]`);
-        const levelTag = color(`[${level.toUpperCase()}]`);
+        const levelTag = colorFunc(`[${level.toUpperCase()}]`);
         
         console.log(`${prefix} ${levelTag} ${message}`);
         if (data) {
