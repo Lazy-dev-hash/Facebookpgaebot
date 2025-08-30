@@ -23,7 +23,7 @@ app.use(express.json());
 // Aesthetic Logger Class
 class AestheticLogger {
     constructor() {
-        this.colors = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'];
+        this.colors = ['#ff0000', '#ff8000', '#ffff00', '#00ff00', '#0000ff', '#4b0082', '#9400d3'];
         this.rainbowGradient = gradient(this.colors);
         this.initLogger();
     }

@@ -16,7 +16,7 @@
     "cli-spinner": "^0.2.10",
     "express": "^5.1.0",
     "figlet": "^1.8.2",
-    "gradient-string": "^3.0.0",
+    "gradient-string": "^2.0.2",
     "moment": "^2.30.1"
   }
 }
