@@ -217,26 +217,41 @@
         }
 
         // Handle form submission
-        document.getElementById('registrationForm').addEventListener('submit', function(e) {
+        document.getElementById('registrationForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            const referenceNumber = document.getElementById('referenceNumber').value;
+            const referenceNumber = document.getElementById('referenceNumber').value.trim();
             const statusDiv = document.getElementById('status');
             
             if (!referenceNumber.startsWith('#') || !referenceNumber.includes('-')) {
-                statusDiv.innerHTML = '<div class="status error">❌ Invalid reference number format!</div>';
+                statusDiv.innerHTML = '<div class="status error">❌ Invalid reference number format! Example: #User1234-56789</div>';
                 return;
             }
             
-            // Simulate registration process
+            // Show processing status
             statusDiv.innerHTML = '<div class="status">🔄 Processing registration...</div>';
             
-            setTimeout(() => {
-                statusDiv.innerHTML = '<div class="status success">✅ Registration completed successfully! You can now use KAIZ Bot on Facebook Messenger.</div>';
+            try {
+                const response = await fetch('/complete-registration', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ referenceNumber })
+                });
                 
-                // Reset form
-                document.getElementById('registrationForm').reset();
-            }, 2000);
+                const result = await response.json();
+                
+                if (result.success) {
+                    statusDiv.innerHTML = `<div class="status success">✅ ${result.message}</div>`;
+                    document.getElementById('registrationForm').reset();
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">❌ ${result.message}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<div class="status error">❌ Connection error. Please try again.</div>';
+                console.error('Registration error:', error);
+            }
         });
 
         // Initialize particles

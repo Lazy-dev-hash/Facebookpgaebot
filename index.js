@@ -25,6 +25,7 @@ app.use(express.static('public'));
 
 // User database (in-memory for simplicity)
 const userDatabase = new Map();
+const pendingRegistrations = new Map(); // Track pending registrations by reference number
 
 // Aesthetic Logger Class
 class AestheticLogger {
@@ -172,6 +173,7 @@ class UserManager {
         };
         
         userDatabase.set(userId, user);
+        pendingRegistrations.set(referenceNumber, userId);
         logger.info(`New user registered: ${referenceNumber}`);
         return user;
     }
@@ -193,6 +195,41 @@ class UserManager {
 
     isRegistered(userId) {
         return userDatabase.has(userId);
+    }
+
+    async completeRegistration(referenceNumber) {
+        const userId = pendingRegistrations.get(referenceNumber);
+        if (userId) {
+            const user = userDatabase.get(userId);
+            if (user && user.accepted) {
+                user.status = 'active';
+                userDatabase.set(userId, user);
+                pendingRegistrations.delete(referenceNumber);
+                
+                // Send notification to user on Facebook
+                await bot.sendMessage(userId, { 
+                    text: `🎊 Registration Complete! 🎊
+
+Hi ${user.name}! 👋
+
+Your registration via the website has been completed successfully! ✅
+
+Reference Number: ${user.referenceNumber}
+Status: Active ✅
+
+You can now use all KAIZ Bot features! Type 'menu' to get started! 🚀` 
+                });
+                
+                logger.success(`Registration completed for ${referenceNumber}`);
+                return user;
+            }
+        }
+        return null;
+    }
+
+    getPendingRegistration(referenceNumber) {
+        const userId = pendingRegistrations.get(referenceNumber);
+        return userId ? userDatabase.get(userId) : null;
     }
 }
 
@@ -247,13 +284,21 @@ class MessengerBot {
     }
 
     async sendButtonTemplate(recipientId, text, buttons) {
+        // Ensure text is not too long for button template (limit: 640 characters)
+        const truncatedText = text.length > 640 ? text.substring(0, 637) + '...' : text;
+        
         const message = {
             attachment: {
                 type: 'template',
                 payload: {
                     template_type: 'button',
-                    text: text,
-                    buttons: buttons
+                    text: truncatedText,
+                    buttons: buttons.map(button => ({
+                        type: button.type,
+                        title: button.title,
+                        payload: button.payload || undefined,
+                        url: button.url || undefined
+                    }))
                 }
             }
         };
@@ -261,25 +306,25 @@ class MessengerBot {
     }
 
     async sendTermsAndConditions(recipientId, username) {
-        const termsText = `🔒 **Terms & Conditions**
+        const termsText = `🔒 Terms & Conditions
 
-Hello **${username}**! 👋
+Hello ${username}! 👋
 
-Welcome to **KAIZ Bot**! Before you can start using our services, please read and accept our terms:
+Welcome to KAIZ Bot! Before you can start using our services, please read and accept our terms:
 
-📋 **Terms of Service:**
+📋 Terms of Service:
 • Respect other users and use appropriate language
 • Don't spam or abuse the bot's features
 • Content downloaded is for personal use only
 • We reserve the right to suspend accounts for violations
 • Your data is processed according to our privacy policy
 
-🤖 **AI Usage Rules:**
+🤖 AI Usage Rules:
 • Don't generate harmful or inappropriate content
 • AI responses are generated and may not always be accurate
 • Don't use AI for illegal activities
 
-🎵 **Media Download Rules:**
+🎵 Media Download Rules:
 • Only download content you have rights to use
 • Respect copyright and intellectual property
 • Downloads are for personal use only
@@ -303,20 +348,20 @@ By clicking "I Accept", you agree to these terms and can start using KAIZ Bot.`;
     }
 
     async sendWelcomeMessage(recipientId, user) {
-        const welcomeText = `🎉 **Welcome ${user.name}!** 🤖
+        const welcomeText = `🎉 Welcome ${user.name}! 🤖
 
-Your registration is **complete**! ✅
-**Reference Number:** ${user.referenceNumber}
+Your registration is complete! ✅
+Reference Number: ${user.referenceNumber}
 
-🌟 **KAIZ Bot Features:**
+🌟 KAIZ Bot Features:
 
-🧠 **Multi-AI Chat** - Multiple AI models at your service
-🎵 **Media Downloader** - Spotify, TikTok, Instagram
-🖼️ **Image Tools** - Analysis, background removal
-📚 **Smart Search** - TikTok search, Wikipedia
-🔧 **Utility Tools** - Various helpful features
+🧠 Multi-AI Chat - Multiple AI models at your service
+🎵 Media Downloader - Spotify, TikTok, Instagram
+🖼️ Image Tools - Analysis, background removal
+📚 Smart Search - TikTok search, Wikipedia
+🔧 Utility Tools - Various helpful features
 
-Type **'help'** or **'menu'** to explore all features!`;
+Type 'help' or 'menu' to explore all features!`;
 
         const quickReplies = [
             { title: '🤖 AI Chat', payload: 'ai_chat' },
@@ -329,22 +374,22 @@ Type **'help'** or **'menu'** to explore all features!`;
     }
 
     async sendRegistrationNotification(recipientId, user) {
-        const notificationText = `🎊 **Registration Successful!** 🎊
+        const notificationText = `🎊 Registration Successful! 🎊
 
-**Hi ${user.name}!** 👋
+Hi ${user.name}! 👋
 
-Your KAIZ Bot account has been **successfully registered**! ✅
+Your KAIZ Bot account has been successfully registered! ✅
 
-📋 **Your Details:**
-• **Name:** ${user.name}
-• **Reference ID:** ${user.referenceNumber}
-• **Status:** Active ✅
-• **Registered:** ${new Date(user.registeredAt).toLocaleDateString()}
+📋 Your Details:
+• Name: ${user.name}
+• Reference ID: ${user.referenceNumber}
+• Status: Active ✅
+• Registered: ${new Date(user.registeredAt).toLocaleDateString()}
 
-🎯 **What's Next?**
+🎯 What's Next?
 You can now access all KAIZ Bot features including AI chat, media downloads, and more!
 
-Type **'menu'** to get started! 🚀`;
+Type 'menu' to get started! 🚀`;
 
         await this.sendMessage(recipientId, { text: notificationText });
     }
@@ -1399,6 +1444,69 @@ app.get('/health', (req, res) => {
 
 app.get('/register', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Registration completion endpoint
+app.post('/complete-registration', async (req, res) => {
+    try {
+        const { referenceNumber } = req.body;
+        
+        if (!referenceNumber) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Reference number is required' 
+            });
+        }
+
+        const user = await userManager.completeRegistration(referenceNumber);
+        
+        if (user) {
+            res.json({ 
+                success: true, 
+                message: 'Registration completed successfully! You will receive a notification on Facebook Messenger.',
+                user: {
+                    name: user.name,
+                    referenceNumber: user.referenceNumber,
+                    status: user.status
+                }
+            });
+        } else {
+            res.status(404).json({ 
+                success: false, 
+                message: 'Invalid reference number or user has not accepted terms yet. Please ensure you have accepted the terms in the Facebook Messenger first.' 
+            });
+        }
+    } catch (error) {
+        logger.error('Registration completion failed', error.message);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Internal server error' 
+        });
+    }
+});
+
+// Check registration status endpoint
+app.get('/registration-status/:referenceNumber', (req, res) => {
+    try {
+        const { referenceNumber } = req.params;
+        const user = userManager.getPendingRegistration(referenceNumber);
+        
+        if (user) {
+            res.json({
+                exists: true,
+                accepted: user.accepted,
+                status: user.status,
+                name: user.name
+            });
+        } else {
+            res.json({
+                exists: false
+            });
+        }
+    } catch (error) {
+        logger.error('Status check failed', error.message);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
 // Webhook verification
